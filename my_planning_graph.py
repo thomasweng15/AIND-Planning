@@ -81,8 +81,8 @@ class PgNode_s(PgNode):
         :return:
             print only
         """
-        if not self.is_pos:
-            print("\n*** ~{}".format(self.symbol))
+        if self.is_pos:
+            print("\n*** {}".format(self.symbol))
         else:
             print("\n*** ~{}".format(self.symbol))
         PgNode.show(self)
@@ -311,6 +311,17 @@ class PlanningGraph():
         #   to see if a proposed PgNode_a has prenodes that are a subset of the previous S level.  Once an
         #   action node is added, it MUST be connected to the S node instances in the appropriate s_level set.
 
+        self.a_levels.append(set())
+
+        for action in self.all_actions:
+            new_node = PgNode_a(action)
+            if new_node.prenodes.issubset(self.s_levels[level]):
+                self.a_levels[level].add(new_node)
+                for s_node in self.s_levels[level]:
+                    if s_node in new_node.prenodes:
+                        new_node.parents.add(s_node)
+                        s_node.children.add(new_node)
+
     def add_literal_level(self, level):
         """ add an S (literal) level to the Planning Graph
 
@@ -320,14 +331,25 @@ class PlanningGraph():
         :return:
             adds S nodes to the current level in self.s_levels[level]
         """
-        # TODO add literal S level to the planning graph as described in the Russell-Norvig text
-        # 1. determine what literals to add
-        # 2. connect the nodes
+        # add literal S level to the planning graph as described in the Russell-Norvig text
         # for example, every A node in the previous level has a list of S nodes in effnodes that represent the effect
         #   produced by the action.  These literals will all be part of the new S level.  Since we are working with sets, they
         #   may be "added" to the set without fear of duplication.  However, it is important to then correctly create and connect
         #   all of the new S nodes as children of all the A nodes that could produce them, and likewise add the A nodes to the
         #   parent sets of the S nodes
+
+        self.s_levels.append(set())
+        hashmap = {}
+
+        for action in self.a_levels[level - 1]:
+            for literal in action.effnodes:
+                if literal not in hashmap:
+                    hashmap[literal] = PgNode_s(literal.symbol, literal.is_pos)
+
+                action.children.add(hashmap[literal])
+                hashmap[literal].parents.add(action)
+
+            self.s_levels[level] = set([x for x in hashmap.values()])
 
     def update_a_mutex(self, nodeset):
         """ Determine and update sibling mutual exclusion for A-level nodes
@@ -345,15 +367,15 @@ class PlanningGraph():
             mutex set in each PgNode_a in the set is appropriately updated
         """
         nodelist = list(nodeset)
-        for i, n1 in enumerate(nodelist[:-1]):
-            for n2 in nodelist[i + 1:]:
-                if (self.serialize_actions(n1, n2) or
-                        self.inconsistent_effects_mutex(n1, n2) or
-                        self.interference_mutex(n1, n2) or
-                        self.competing_needs_mutex(n1, n2)):
-                    mutexify(n1, n2)
+        for i, node1 in enumerate(nodelist[:-1]):
+            for node2 in nodelist[i + 1:]:
+                if (self.serialize_actions(node1, node2) or
+                        self.inconsistent_effects_mutex(node1, node2) or
+                        self.interference_mutex(node1, node2) or
+                        self.competing_needs_mutex(node1, node2)):
+                    mutexify(node1, node2)
 
-    def serialize_actions(self, node_a1: PgNode_a, node_a2: PgNode_a) -> bool:
+    def serialize_actions(self, node_a1: PgNode_a, node_a2: PgNode_a):
         """
         Test a pair of actions for mutual exclusion, returning True if the
         planning graph is serial, and if either action is persistent; otherwise
@@ -364,14 +386,13 @@ class PlanningGraph():
         :param node_a2: PgNode_a
         :return: bool
         """
-        #
         if not self.serial:
             return False
         if node_a1.is_persistent or node_a2.is_persistent:
             return False
         return True
 
-    def inconsistent_effects_mutex(self, node_a1: PgNode_a, node_a2: PgNode_a) -> bool:
+    def inconsistent_effects_mutex(self, node_a1: PgNode_a, node_a2: PgNode_a):
         """
         Test a pair of actions for inconsistent effects, returning True if
         one action negates an effect of the other, and False otherwise.
@@ -385,8 +406,12 @@ class PlanningGraph():
         :param node_a2: PgNode_a
         :return: bool
         """
-        # TODO test for Inconsistent Effects between nodes
-        return False
+
+        action_1 = node_a1.action
+        action_2 = node_a2.action
+        return (action_1.effect_add == action_2.effect_rem) or \
+               (action_2.effect_add == action_1.effect_rem)
+        
 
     def interference_mutex(self, node_a1: PgNode_a, node_a2: PgNode_a) -> bool:
         """
