@@ -483,11 +483,8 @@ class PlanningGraph():
         :param node_s2: PgNode_s
         :return: bool
         """
-        if node_s1.symbol == node_s2.symbol and \
-            node_s1.is_pos != node_s2.is_pos:
-            return True
-
-        return False
+        return node_s1.symbol == node_s2.symbol and \
+               node_s1.is_pos != node_s2.is_pos
 
     def inconsistent_support_mutex(self, node_s1: PgNode_s, node_s2: PgNode_s):
         """
@@ -505,7 +502,19 @@ class PlanningGraph():
         :param node_s2: PgNode_s
         :return: bool
         """
-        # TODO test for Inconsistent Support between nodes
+
+        # If one parent action achieves both states, return false
+        all_parents = node_s1.parents.union(node_s2.parents)
+        for parent in all_parents:
+            if node_s1 in parent.effnodes and node_s2 in parent.effnodes:
+                return False
+
+        # Check that pairwise parent actions aren't mutex
+        for parent1 in node_s1.parents:
+            for parent2 in node_s2.parents:
+                if parent1.is_mutex(parent2):
+                    return True
+
         return False
 
     def h_levelsum(self) -> int:
